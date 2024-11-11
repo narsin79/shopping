@@ -36,8 +36,9 @@ class ProfileController extends Controller
         $user = $request->user();
         /** @var Customer $customer */
         $customer = $user->customer;
-        $shippingAddress = $customer->shippingAddress ?: new CustomerAddress(['type' => AddressType::Shipping]);
-        $billingAddress = $customer->billingAddress ?: new CustomerAddress(['type' => AddressType::Billing]);
+        $shippingAddress = $customer->shippingAddress ?? new CustomerAddress(['type' => AddressType::Shipping]);
+        $billingAddress = $customer->billingAddress ?? new CustomerAddress(['type' => AddressType::Billing]);
+
         $countries = Country::query()->orderBy('name')->get();
         return view('profile.view', compact('customer', 'user', 'shippingAddress', 'billingAddress', 'countries'));
     }
@@ -57,22 +58,38 @@ class ProfileController extends Controller
 
         /** @var User $user */
         $user = $request->user();
-        /** @var Customer $customer */
+        /** @var Customer|null $customer */
         $customer = $user->customer;
 
-        $customer->update($customerData);
+        // Ensure a customer record exists for the user
+        if ($customer) {
+            $customer->update($customerData);
+        } else {
+            $customerData['user_id'] = $user->id;
+            $customer = Customer::create($customerData);
+            $customer->refresh(); // Ensures $customer has the ID after creation
+        }
+        // Check and ensure $customer->id exists after creation
+        if (is_null($customer->user_id)) {
+            throw new \Exception('Customer ID is null even after creation');
+        }
 
+        // Set customer_id in shipping and billing data
+        $shippingData['customer_id'] = $customer->user_id;
+        $billingData['customer_id'] = $customer->user_id;
+
+        // Ensure a shipping address exists or create a new one
         if ($customer->shippingAddress) {
             $customer->shippingAddress->update($shippingData);
         } else {
-            $shippingData['customer_id'] = $customer->user_id;
             $shippingData['type'] = AddressType::Shipping->value;
             CustomerAddress::create($shippingData);
         }
+
+        // Ensure a billing address exists or create a new one
         if ($customer->billingAddress) {
             $customer->billingAddress->update($billingData);
         } else {
-            $billingData['customer_id'] = $customer->user_id;
             $billingData['type'] = AddressType::Billing->value;
             CustomerAddress::create($billingData);
         }
@@ -81,6 +98,8 @@ class ProfileController extends Controller
 
         return redirect()->route('profile');
     }
+
+
 
     /**
      * Update the user's password.
