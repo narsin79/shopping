@@ -36,8 +36,9 @@ class ProfileController extends Controller
         $user = $request->user();
         /** @var Customer $customer */
         $customer = $user->customer;
-        $shippingAddress = $customer->shippingAddress ?: new CustomerAddress(['type' => AddressType::Shipping]);
-        $billingAddress = $customer->billingAddress ?: new CustomerAddress(['type' => AddressType::Billing]);
+        $shippingAddress = $customer->shippingAddress ?? new CustomerAddress(['type' => AddressType::Shipping]);
+        $billingAddress = $customer->billingAddress ?? new CustomerAddress(['type' => AddressType::Billing]);
+
         $countries = Country::query()->orderBy('name')->get();
         return view('profile.view', compact('customer', 'user', 'shippingAddress', 'billingAddress', 'countries'));
     }
@@ -57,11 +58,19 @@ class ProfileController extends Controller
 
         /** @var User $user */
         $user = $request->user();
-        /** @var Customer $customer */
+        /** @var Customer|null $customer */
         $customer = $user->customer;
 
-        $customer->update($customerData);
+        // Ensure a customer record exists for the user
+        if ($customer) {
+            $customer->update($customerData);
+        } else {
+            $customerData['user_id'] = $user->id;
+            $customer = Customer::create($customerData);
+            $customer->refresh(); // Ensure $customer has the ID after creation
+        }
 
+        // Ensure a shipping address exists or create a new one
         if ($customer->shippingAddress) {
             $customer->shippingAddress->update($shippingData);
         } else {
@@ -69,6 +78,8 @@ class ProfileController extends Controller
             $shippingData['type'] = AddressType::Shipping->value;
             CustomerAddress::create($shippingData);
         }
+
+        // Ensure a billing address exists or create a new one
         if ($customer->billingAddress) {
             $customer->billingAddress->update($billingData);
         } else {
@@ -81,6 +92,7 @@ class ProfileController extends Controller
 
         return redirect()->route('profile');
     }
+
 
     /**
      * Update the user's password.
